@@ -1,0 +1,15 @@
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.sdf
+*.opensdf
+*.html
+*.dat
+
+.vs
+Release
+Debug
+Crinkler
+x64
+Encoded
