@@ -15,16 +15,13 @@
 */
 struct Domain
 {
-    // domain size (0 - 2x, 1 - 4x, 2 - 8x, 3 - 16x)
-    uint16 size : 2;
-
     // domain location
     uint16 x : DOMAIN_LOCATION_BITS;
     uint16 y : DOMAIN_LOCATION_BITS;
 
     // bit 0:       domain flip (in local X axis)
     // bits 1-2:    domain rotation (0 - normal, 1 - 90 degree CCW, etc.)
-    uint16 transform : 3;
+    uint16 transform : DOMAIN_TRANSFORM_BITS;
 
     // color intensity mapping (scale and offset)
     uint16 offset : DOMAIN_OFFSET_BITS;
@@ -75,12 +72,12 @@ struct Domain
 
         int32 val = (int32)in;
         val = ((intScale * val) >> (DOMAIN_SCALE_BITS - DOMAIN_SCALE_RANGE_BITS)) + intOffset; // TODO
-        return std::max<int32>(0, std::min<int32>(255, val));
+        return static_cast<uint8>(std::max<int32>(0, std::min<int32>(255, val)));
     }
 
 };
 
-static_assert(sizeof(Domain) == 4, "Invalid domain size");
+//static_assert(sizeof(Domain) == 4, "Invalid domain size");
 
 //////////////////////////////////////////////////////////////////////////
 
