@@ -3,6 +3,7 @@
 #include "common.h"
 #include "domain.h"
 #include "image.h"
+#include "quadtree.h"
 
 #include <Windows.h>
 #include <vector>
@@ -12,21 +13,64 @@
 
 //////////////////////////////////////////////////////////////////////////
 
-struct DomainMatchParams
+struct RangeContext
 {
     // range location
     uint32 rx0, ry0;
+
+    // range and domain images for comparisons (domain image is just 2x downsampled range image)
+    const Image& rangeImage;
+    const Image& domainImage;
+
+    // preallocated arrays for range and domain pixels
+    std::vector<uint8>& rangeDataCache;
+    std::vector<uint8>& domainDataCache;
+
+    RangeContext(const Image& rangeImage, const Image& domainImage,
+                 std::vector<uint8>& rangeDataCache, std::vector<uint8>& domainDataCache)
+        : rangeImage(rangeImage), domainImage(domainImage)
+        , rangeDataCache(rangeDataCache), domainDataCache(domainDataCache)
+    { }
+
+    RangeContext(const RangeContext&) = default;
+};
+
+struct DomainMatchParams
+{
+    const RangeContext& rangeContext;
 
     // domain location
     uint32 dx0, dy0;
     
     uint8 transform;
+
+    DomainMatchParams(const RangeContext& rangeContext)
+        : rangeContext(rangeContext)
+    { }
 };
 
+struct RangeDecompressContext
+{
+    uint32 rx0, ry0;
+    uint32 rangeSize;
+    uint32& domainIndex;
+    QuadtreeCode& quadtreeCode;
+    const Image& srcImage;
+    Image& destImage;
+
+    RangeDecompressContext(const Image& srcImage, Image& destImage,
+                               uint32& domainIndex, QuadtreeCode& quadtreeCode)
+        : srcImage(srcImage), destImage(destImage), domainIndex(domainIndex), quadtreeCode(quadtreeCode)
+    { }
+
+    RangeDecompressContext(const RangeDecompressContext&) = default;
+};
 
 class Compressor
 {
 public:
+    Compressor();
+
     // load compressed image from a file
     bool Load(const std::string& name);
 
@@ -39,28 +83,38 @@ public:
     // decompress an image
     bool Decompress(Image& outImage) const;
 
-    // get compressed image in bits
-    size_t GetCompressedSize() const
-    {
-        return mDomains.size() * (2 * DOMAIN_LOCATION_BITS + DOMAIN_TRANSFORM_BITS + DOMAIN_SCALE_BITS + DOMAIN_OFFSET_BITS);
-    }
-
 private:
     // Calculate range block vs. domain block similarity.
     // Returns best MSE + intensity scaling and offset values
-    float MatchDomain(const Image& rangeImage, const Image& domainImage,
-                      const DomainMatchParams& params, float& outScale, float& outOffset) const;
+    float MatchDomain(const DomainMatchParams& params,
+                      uint8 rangeSize, float& outScale, float& outOffset) const;
 
-    // search best domain for given range block
-    float DomainSearch(const Image& rangeImage, const Image& domainImage,
-                       uint32 rx, uint32 ry, Domain& outDomain) const;
+    // Returns best domain for a given range block
+    float DomainSearch(const RangeContext& rangeContext,
+                       uint8 rangeSize, Domain& outDomain) const;
+
+    // Compress given root range block
+    // Returns list of generated domains and quadtree describing spatial subdivision
+    uint32 CompressRootRange(const RangeContext& rangeContext,
+                             QuadtreeCode& outQuadtreeCode, std::vector<Domain>& outDomains) const;
+
+    // decompress root range (this will be called recursively)
+    void DecompressRange(const RangeDecompressContext& context) const;
 
     DomainsStats CalculateDomainStats() const;
 
+    // Image info
     uint32 mSize;
     uint32 mSizeBits;
     uint32 mSizeMask;
 
+    // Compression info
+    uint8 mMaxRangeSize;
+    uint8 mMinRangeSize;
+
+    using Domains = std::vector<Domain>;
+
     // compressed data
-    std::vector<Domain> mDomains;
+    QuadtreeCode mQuadtreeCode;
+    Domains mDomains;
 };

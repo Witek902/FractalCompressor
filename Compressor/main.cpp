@@ -10,7 +10,8 @@
 
 
 
-// #define DECOMPRESS_EXISTING
+#define DECOMPRESS_EXISTING
+#define COMPARE_WITH_ORIGINAL
 
 int main()
 {
@@ -35,13 +36,11 @@ int main()
         std::cout << "Failed to compress image" << std::endl;
         return 1;
     }
+    compressor.Save("../Encoded/encoded.dat");
 #endif // DECOMPRESS_EXISTING
 
-    const float bitsPerPixel = compressor.GetCompressedSize() / (float)(originalImage.GetSize() * originalImage.GetSize());
-    std::cout << "Compressed size: " << compressor.GetCompressedSize() / 8 << " B (" << 
-        std::setw(8) << std::setprecision(4) << bitsPerPixel << " bpp)" << std::endl;
-    compressor.Save("../Encoded/encoded.dat");
-
+    
+#ifdef COMPARE_WITH_ORIGINAL
     Image decompressed;
     if (!compressor.Decompress(decompressed))
     {
@@ -57,6 +56,7 @@ int main()
     std::cout << "MSE      = " << std::setw(8) << std::setprecision(4) << diff.averageError << std::endl;
     std::cout << "PSNR     = " << std::setw(8) << std::setprecision(4) << diff.psnr << " dB" << std::endl;
     std::cout << "maxError = " << std::setw(8) << std::setprecision(4) << diff.maxError << std::endl;
+#endif
 
     system("pause");
     return 0;

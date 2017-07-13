@@ -3,6 +3,7 @@
 #include "common.h"
 
 #include <vector>
+#include <assert.h>
 
 //////////////////////////////////////////////////////////////////////////
 
@@ -107,6 +108,8 @@ public:
     // get single pixel
     FORCE_INLINE void WritePixel(uint32 x, uint32 y, uint8 value)
     {
+        assert(x < mSize);
+        assert(y < mSize);
         mData[y * mSize + x] = value;
     }
 

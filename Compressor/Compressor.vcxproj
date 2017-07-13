@@ -160,6 +160,7 @@
     <ClInclude Include="domain.h" />
     <ClInclude Include="image.h" />
     <ClInclude Include="compressor.h" />
+    <ClInclude Include="quadtree.h" />
     <ClInclude Include="settings.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

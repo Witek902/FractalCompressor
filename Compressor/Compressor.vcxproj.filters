@@ -41,5 +41,8 @@
     <ClInclude Include="compressor.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="quadtree.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
