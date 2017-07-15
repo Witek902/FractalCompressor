@@ -51,10 +51,13 @@ public:
     Image& operator = (Image&&) = default;
 
     // resize and init with zeros
-    bool Resize(uint32 size);
+    bool Resize(uint32 size, uint32 channels);
 
     // create 2x downsampled image
     Image Downsample() const;
+
+    // create 2x upsampled image
+    Image Upsample() const;
 
     // load image from a BMP file
     bool Load(const char* path);
@@ -62,11 +65,11 @@ public:
     // save image to a BMP file
     bool Save(const std::string& name) const;
 
-    // decompose RBG image to YUV image
-    bool ToYUV(Image& y, Image& u, Image& v) const;
+    // decompose RBG image to YCbCr image
+    bool ToYCbCr(Image& y, Image& cb, Image& cr) const;
 
-    // convert separate YUV images into one RGB image
-    bool FromYUV(const Image& y, const Image& u, const Image& v);
+    // convert separate YCbCr images into one RGB image
+    bool FromYCbCr(const Image& y, const Image& cb, const Image& cr);
 
     // compare two images
     static ImageDifference Compare(const Image& imageA, const Image& imageB);
@@ -91,31 +94,67 @@ public:
         return mChannels;
     }
 
-    // get single pixel
+    // get single pixel (monochromatic)
     FORCE_INLINE uint8 Sample(uint32 x, uint32 y) const
     {
+        assert(mChannels == 1);
+        assert(x < mSize);
+        assert(y < mSize);
+
         return mData[y * mSize + x];
+    }
+
+    // get single pixel (RGB)
+    FORCE_INLINE void Sample3(uint32 x, uint32 y, uint8& r, uint8& g, uint8& b) const
+    {
+        assert(mChannels == 3);
+        assert(x < mSize);
+        assert(y < mSize);
+
+        const uint8* data = mData.data() + 3 * (y * mSize + x);
+        r = data[0];
+        g = data[1];
+        b = data[2];
     }
 
     // get single pixel (wrap around)
     FORCE_INLINE uint8 SampleWrapped(uint32 x, uint32 y) const
     {
+        assert(mChannels == 1);
+
         x &= mSizeMask;
         y &= mSizeMask;
         return mData[y * mSize + x];
     }
 
-    // get single pixel
+    // write single pixel (monochromatic)
     FORCE_INLINE void WritePixel(uint32 x, uint32 y, uint8 value)
     {
+        assert(mChannels == 1);
         assert(x < mSize);
         assert(y < mSize);
+
         mData[y * mSize + x] = value;
+    }
+
+    // write single pixel (RGB)
+    FORCE_INLINE void WritePixel3(uint32 x, uint32 y, uint8 r, uint8 g, uint8 b)
+    {
+        assert(mChannels == 3);
+        assert(x < mSize);
+        assert(y < mSize);
+
+        uint8* data = mData.data() + 3 * (y * mSize + x);
+        data[0] = r;
+        data[1] = g;
+        data[2] = b;
     }
 
     // get and downsampled 2x2 region of pixels
     FORCE_INLINE uint8 SampleDomain(uint32 x, uint32 y) const
     {
+        assert(mChannels == 1);
+
         const uint32 xa = x & mSizeMask;
         const uint32 xb = (x + 1) & mSizeMask;
         const uint32 ya = y & mSizeMask;

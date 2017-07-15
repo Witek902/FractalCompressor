@@ -61,7 +61,7 @@ FORCE_INLINE void TransformLocation(uint32 rangeSize, uint32 x, uint32 y, uint8 
 //////////////////////////////////////////////////////////////////////////
 
 Compressor::Compressor()
-    : mMaxRangeSize(32)
+    : mMaxRangeSize(16)
     , mMinRangeSize(4)
 {
 }
@@ -303,8 +303,6 @@ bool Compressor::Compress(const Image& image)
         }
     };
 
-    std::cout << "Compressing using " << numThreads << " threads... " << std::endl;
-
     // launch threads
     std::vector<std::thread> threads;
     for (uint32 i = 0; i < numThreads; ++i)
@@ -466,12 +464,10 @@ bool Compressor::Decompress(Image& outImage) const
 
     const uint32 MAX_ITERATIONS = 50;
 
-    std::cout << "Decompressing..." << std::endl;
-
     uint32 currentImage = 0;
     Image tempImages[2];
-    tempImages[0].Resize(mSize);
-    tempImages[1].Resize(mSize);
+    tempImages[0].Resize(mSize, 1);
+    tempImages[1].Resize(mSize, 1);
 
     QuadtreeCode tmpQuadtreeCode(mQuadtreeCode);
 

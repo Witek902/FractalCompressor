@@ -17,7 +17,21 @@ struct BitmapFileHeader
 
 //////////////////////////////////////////////////////////////////////////
 
-bool Image::Resize(uint32 size)
+#define CLIP(X) ( (X) > 255 ? 255 : (X) < 0 ? 0 : X)
+
+// RGB -> YCbCr
+#define CONVERT_RGB2Y(R, G, B)  CLIP((19595 * R + 38470 * G + 7471 * B) >> 16)
+#define CONVERT_RGB2Cb(R, G, B) CLIP((36962 * (B - CLIP((19595 * R + 38470 * G + 7471 * B) >> 16)) >> 16) + 128)
+#define CONVERT_RGB2Cr(R, G, B) CLIP((46727 * (R - CLIP((19595 * R + 38470 * G + 7471 * B) >> 16)) >> 16) + 128)
+
+// YCbCr -> RGB
+#define CONVERT_YCbCr2R(Y, Cb, Cr) CLIP(Y + (91881 * Cr >> 16) - 179)
+#define CONVERT_YCbCr2G(Y, Cb, Cr) CLIP(Y - ((22544 * Cb + 46793 * Cr) >> 16) + 135)
+#define CONVERT_YCbCr2B(Y, Cb, Cr) CLIP(Y + (116129 * Cb >> 16) - 226)
+
+//////////////////////////////////////////////////////////////////////////
+
+bool Image::Resize(uint32 size, uint32 channels)
 {
     if ((size & (size - 1)) != 0)
     {
@@ -25,6 +39,13 @@ bool Image::Resize(uint32 size)
         return false;
     }
 
+    if (channels != 1 && channels != 3)
+    {
+        std::cout << "Image channels number must be 1 or 3" << std::endl;
+        return false;
+    }
+
+    mChannels = channels;
     mSize = size;
     mSizeBits = 0;
     {
@@ -33,24 +54,46 @@ bool Image::Resize(uint32 size)
     }
     mSizeMask = (1 << mSizeBits) - 1;
 
-    mData.resize(size * size);
+    mData.resize(size * size * channels);
     memset(mData.data(), 0, mData.size());
     return true;
 }
 
 Image Image::Downsample() const
 {
+    assert(mChannels == 1);
+
     Image result;
-    if (result.Resize(mSize / 2))
+    if (result.Resize(mSize / 2, 1))
     {
         for (uint32 y = 0; y < mSize; y += 2)
         {
             for (uint32 x = 0; x < mSize; x += 2)
             {
                 result.mData[(y / 2) * (mSize / 2) + (x / 2)] = SampleDomain(x, y);
+            }
+        }
+    }
 
-                //uint32 color = ((uint32)Sample(x, y) + (uint32)Sample(x + 1, y) + (uint32)Sample(x, y + 1) + (uint32)Sample(x + 1, y + 1)) / 4;
-                //result.mData[(y / 2) * (mSize / 2) + (x / 2)] = (uint8)color;
+    return result;
+}
+
+Image Image::Upsample() const
+{
+    assert(mChannels == 1);
+
+    Image result;
+    if (result.Resize(mSize * 2, 1))
+    {
+        for (uint32 y = 0; y < mSize; y++)
+        {
+            for (uint32 x = 0; x < mSize; x++)
+            {
+                const uint8 v = Sample(x, y);
+                result.WritePixel(2 * x, 2 * y, v);
+                result.WritePixel(2 * x, 2 * y + 1, v);
+                result.WritePixel(2 * x + 1, 2 * y, v);
+                result.WritePixel(2 * x + 1, 2 * y + 1, v);
             }
         }
     }
@@ -110,22 +153,15 @@ bool Image::Load(const char* path)
     }
     mSizeMask = (1 << mSizeBits) - 1;
 
-    // convert to grayscale
-    std::vector<uint8> sourceData;
-    sourceData.resize(3 * mSize * mSize);
-    if (fread(sourceData.data(), 3 * mSize * mSize, 1, file) != 1)
+    // read data
+    mData.resize(3 * mSize * mSize);
+    if (fread(mData.data(), 3 * mSize * mSize, 1, file) != 1)
     {
         fclose(file);
         std::cout << "Failed to read image data" << std::endl;
         return false;
     }
     fclose(file);
-
-    mData.resize(mSize * mSize);
-    for (uint32 i = 0; i < mSize * mSize; ++i)
-    {
-        mData[i] = sourceData[3 * i];
-    }
 
     mChannels = 3;
 
@@ -175,15 +211,21 @@ bool Image::Save(const std::string& name) const
         return false;
     }
 
-    // convert to grayscale
     std::vector<uint8> tmpData;
-    tmpData.resize(3 * mSize * mSize);
-    for (uint32 i = 0; i < mSize * mSize; ++i)
+    if (mChannels == 3)
     {
-        tmpData[3 * i] = mData[i];
-        tmpData[3 * i + 1] = mData[i];
-        tmpData[3 * i + 2] = mData[i];
-
+        tmpData = mData;
+    }
+    else
+    {
+        // extend grayscale to all the RGB channels
+        tmpData.resize(3 * mSize * mSize);
+        for (uint32 i = 0; i < mSize * mSize; ++i)
+        {
+            tmpData[3 * i] = mData[i];
+            tmpData[3 * i + 1] = mData[i];
+            tmpData[3 * i + 2] = mData[i];
+        }
     }
 
     if (fwrite(tmpData.data(), dataSize, 1, file) != 1)
@@ -221,14 +263,61 @@ ImageDifference Image::Compare(const Image& imageA, const Image& imageB)
     return result;
 }
 
-bool Image::ToYUV(Image& y, Image& u, Image& v) const
+bool Image::ToYCbCr(Image& y, Image& cb, Image& cr) const
 {
-    // TODO
-    return false;
+    assert(mChannels == 3);
+
+    if (!y.Resize(mSize, 1) || !cb.Resize(mSize, 1) || !cr.Resize(mSize, 1))
+    {
+        std::cout << "Failed to resize target images" << std::endl;
+        return false;
+    }
+
+    for (uint32 j = 0; j < mSize; j++)
+    {
+        for (uint32 i = 0; i < mSize; i++)
+        {
+            uint8 r, g, b;
+            Sample3(i, j, r, g, b);
+
+            y.WritePixel(i, j, CONVERT_RGB2Y(r, g, b));
+            cb.WritePixel(i, j, CONVERT_RGB2Cb(r, g, b));
+            cr.WritePixel(i, j, CONVERT_RGB2Cr(r, g, b));
+        }
+    }
+
+    return true;
 }
 
-bool Image::FromYUV(const Image& y, const Image& u, const Image& v)
+bool Image::FromYCbCr(const Image& y, const Image& cb, const Image& cr)
 {
-    // TODO
-    return false;
+    assert(y.mSize == cb.mSize);
+    assert(y.mSize == cr.mSize);
+    assert(y.mChannels == 1);
+    assert(cb.mChannels == 1);
+    assert(cr.mChannels == 1);
+
+    if (!Resize(y.mSize, 3))
+    {
+        std::cout << "Failed to resize image" << std::endl;
+        return false;
+    }
+
+    for (uint32 j = 0; j < mSize; j++)
+    {
+        for (uint32 i = 0; i < mSize; i++)
+        {
+            const uint8 yComp = y.Sample(i, j);
+            const uint8 cbComp = cb.Sample(i, j);
+            const uint8 crComp = cr.Sample(i, j);
+
+            const uint8 r = (uint8)CONVERT_YCbCr2R(yComp, cbComp, crComp);
+            const uint8 g = (uint8)CONVERT_YCbCr2G(yComp, cbComp, crComp);
+            const uint8 b = (uint8)CONVERT_YCbCr2B(yComp, cbComp, crComp);
+
+            WritePixel3(i, j, r, g, b);
+        }
+    }
+
+    return true;
 }
