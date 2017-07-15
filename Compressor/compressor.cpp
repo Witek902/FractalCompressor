@@ -62,7 +62,7 @@ FORCE_INLINE void TransformLocation(uint32 rangeSize, uint32 x, uint32 y, uint8 
 //////////////////////////////////////////////////////////////////////////
 
 Compressor::Compressor()
-    : mMaxRangeSize(16)
+    : mMaxRangeSize(32)
     , mMinRangeSize(4)
 {
 }
@@ -185,7 +185,7 @@ float Compressor::DomainSearch(const RangeContext& rangeContext, uint8 rangeSize
 uint32 Compressor::CompressRootRange(const RangeContext& rangeContext,
                                    QuadtreeCode& outQuadtreeCode, std::vector<Domain>& outDomains) const
 {
-    const float initialThreshold = 90.0f;           // MSE threshold for the first subdivision level
+    const float initialThreshold = 95.0f;           // MSE threshold for the first subdivision level
     const float adaptiveThresholdFactor = 0.95f;    // threshold multiplier for consecutive levels
 
     uint32 numDomainsInTree = 0;
@@ -198,7 +198,7 @@ uint32 Compressor::CompressRootRange(const RangeContext& rangeContext,
         subRangeContext.ry0 = ry0;
 
         Domain domain;
-        const float mse = DomainSearch(subRangeContext, mMaxRangeSize, domain);
+        const float mse = DomainSearch(subRangeContext, rangeSize, domain);
 
         bool subdivide = false;
 

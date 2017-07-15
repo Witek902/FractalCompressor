@@ -10,7 +10,7 @@
 
 
 
-#define DECOMPRESS_EXISTING
+//#define DECOMPRESS_EXISTING
 #define COMPARE_WITH_ORIGINAL
 
 int main()
