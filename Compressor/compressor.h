@@ -8,7 +8,7 @@
 #include <Windows.h>
 #include <vector>
 #include <string>
-#include <immintrin.h>
+#include <mutex>
 
 
 //////////////////////////////////////////////////////////////////////////
@@ -18,18 +18,15 @@ struct RangeContext
     // range location
     uint32 rx0, ry0;
 
-    // range and domain images for comparisons (domain image is just 2x downsampled range image)
-    const Image& rangeImage;
-    const Image& domainImage;
+    // image for comparisons
+    const Image& image;
 
     // preallocated arrays for range and domain pixels
     std::vector<uint8>& rangeDataCache;
     std::vector<uint8>& domainDataCache;
 
-    RangeContext(const Image& rangeImage, const Image& domainImage,
-                 std::vector<uint8>& rangeDataCache, std::vector<uint8>& domainDataCache)
-        : rangeImage(rangeImage), domainImage(domainImage)
-        , rangeDataCache(rangeDataCache), domainDataCache(domainDataCache)
+    RangeContext(const Image& image, std::vector<uint8>& rangeDataCache, std::vector<uint8>& domainDataCache)
+        : image(image), rangeDataCache(rangeDataCache), domainDataCache(domainDataCache)
     { }
 
     RangeContext(const RangeContext&) = default;
@@ -102,6 +99,8 @@ private:
     void DecompressRange(const RangeDecompressContext& context) const;
 
     DomainsStats CalculateDomainStats() const;
+
+    mutable std::mutex mMutex;
 
     // Image info
     uint32 mSize;

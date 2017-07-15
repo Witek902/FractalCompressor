@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <iomanip>
 #include <thread>
-#include <mutex>
 
 
 //#define DISABLE_QUADTREE_SUBDIVISION
@@ -82,7 +81,7 @@ float Compressor::MatchDomain(const DomainMatchParams& params, uint8 rangeSize,
 
     uint32 gh = 0, gSum = 0, gSqrSum = 0, hSum = 0, index = 0;
 
-    for (uint8 y = 0; y <rangeSize; y++)
+    for (uint8 y = 0; y < rangeSize; y++)
     {
         for (uint8 x = 0; x < rangeSize; x++)
         {
@@ -90,11 +89,12 @@ float Compressor::MatchDomain(const DomainMatchParams& params, uint8 rangeSize,
             uint32 tx, ty;
             TransformLocation(rangeSize, x, y, params.transform, tx, ty);
 
-            // sample domain block (it's already downsampled)
-            const uint8 domainPixelColor = rangeCtx.domainImage.SampleWrapped(params.dx0 + tx, params.dy0 + ty);
+            // sample domain blocks pixel (with downsample)
+            // TODO this could be cached
+            const uint8 domainPixelColor = rangeCtx.image.SampleDomain(params.dx0 + 2 * tx, params.dy0 + 2 * ty);
 
             // sample range blocks pixel
-            const uint8 rangePixelColor = rangeCtx.rangeImage.Sample(rangeCtx.rx0 + x, rangeCtx.ry0 + y);
+            const uint8 rangePixelColor = rangeCtx.image.Sample(rangeCtx.rx0 + x, rangeCtx.ry0 + y);
 
             // these will be used below
             gh += domainPixelColor * rangePixelColor;
@@ -144,18 +144,18 @@ float Compressor::DomainSearch(const RangeContext& rangeContext, uint8 rangeSize
     Domain bestDomain;
     float bestCost = FLT_MAX;
 
-    const uint32 DOMAIN_MAX_LOCATIONS = (1 << DOMAIN_LOCATION_BITS);
-    const uint32 DOMAIN_LOC_STEP = 1 << (rangeContext.domainImage.GetSizeBits() - DOMAIN_LOCATION_BITS);
+    const uint32 domainScaling = mSizeBits > DOMAIN_LOCATION_BITS ? mSizeBits - DOMAIN_LOCATION_BITS : 0;
+    const uint32 maxDomainLocations = std::min<uint32>(mSize, 1 << DOMAIN_LOCATION_BITS);
 
     DomainMatchParams matchParams(rangeContext);
 
     // iterate through all possible domains locations
-    for (uint32 y = 0; y < DOMAIN_MAX_LOCATIONS; y++)
+    for (uint32 y = 0; y < maxDomainLocations; y++)
     {
-        matchParams.dy0 = y * DOMAIN_LOC_STEP;
-        for (uint32 x = 0; x < DOMAIN_MAX_LOCATIONS; x++)
+        matchParams.dy0 = y << domainScaling;
+        for (uint32 x = 0; x < maxDomainLocations; x++)
         {
-            matchParams.dx0 = x * DOMAIN_LOC_STEP;
+            matchParams.dx0 = x << domainScaling;
 
             // iterate through all possible domains->range transforms
             for (uint8 t = 0; t < DOMAIN_MAX_TRANSFORMS; ++t)
@@ -185,8 +185,8 @@ float Compressor::DomainSearch(const RangeContext& rangeContext, uint8 rangeSize
 uint32 Compressor::CompressRootRange(const RangeContext& rangeContext,
                                    QuadtreeCode& outQuadtreeCode, std::vector<Domain>& outDomains) const
 {
-    const float initialThreshold = 95.0f;           // MSE threshold for the first subdivision level
-    const float adaptiveThresholdFactor = 0.95f;    // threshold multiplier for consecutive levels
+    const float initialThreshold = 80.0f;           // MSE threshold for the first subdivision level
+    const float adaptiveThresholdFactor = 1.0f;    // threshold multiplier for consecutive levels
 
     uint32 numDomainsInTree = 0;
 
@@ -223,6 +223,17 @@ uint32 Compressor::CompressRootRange(const RangeContext& rangeContext,
         }
         else
         {
+            /*
+            {
+                std::lock_guard<std::mutex> lock(mMutex);
+                std::cout << "Range " << std::setw(3) << rx0 << ',' << std::setw(3) << ry0 << " (" << std::setw(2) << rangeSize << " px) -> "
+                    << "Domain: loc=(" << std::setw(3) << (uint32)domain.x << "," << std::setw(3) << (uint32)domain.y << ")"
+                    << ", t=" << (uint32)domain.transform
+                    << ", scale=" << std::setw(8) << std::setprecision(3) << domain.GetScale()
+                    << ", offset=" << std::setw(8) << std::setprecision(3) << domain.GetOffset() << ", "
+                    << "MSE=" << std::setw(8) << std::setprecision(3) << mse << std::endl;
+            }
+            */
             outDomains.push_back(domain);
             numDomainsInTree++;
         }
@@ -240,8 +251,6 @@ bool Compressor::Compress(const Image& image)
         return false;
     }
 
-    const Image downsampledImage = image.Downsample();
-
     mSize = image.GetSize();
     mSizeBits = image.GetSizeBits();
     mSizeMask = image.GetSizeMask();
@@ -251,7 +260,6 @@ bool Compressor::Compress(const Image& image)
     const uint32 rowsPerThread = numRangesInColumn / numThreads;
     const uint32 totalRangeBlocks = numRangesInColumn * numRangesInColumn;
 
-    std::mutex mutex;
     uint32 finishedRangeBlocks = 0;
 
     std::vector<QuadtreeCode> quadtreesPerThread;
@@ -272,7 +280,7 @@ bool Compressor::Compress(const Image& image)
         domainDataCache.resize(numRangePixels);
         rangeDataCache.resize(numRangePixels);
 
-        RangeContext rangeContext(image, downsampledImage, rangeDataCache, domainDataCache);
+        RangeContext rangeContext(image, rangeDataCache, domainDataCache);
 
         for (uint32 i = 0; i < rowsPerThread; ++i) // iterate local rows
         {
@@ -286,21 +294,10 @@ bool Compressor::Compress(const Image& image)
 
                 // progress indicator
                 {
-                    std::lock_guard<std::mutex> lock(mutex);
+                    std::lock_guard<std::mutex> lock(mMutex);
                     finishedRangeBlocks++;
                     std::cout << std::setw(5) << finishedRangeBlocks << " /" << std::setw(5) << totalRangeBlocks << " (" <<
                         std::setw(8) << std::setprecision(3) << (100.0f * (float)finishedRangeBlocks / (float)totalRangeBlocks) << "%)\r";
-
-                    /*
-                    std::cout << std::setw(5) << finishedRangeBlocks << " / " << std::setw(5) << totalRangeBlocks
-                        << " Domain: loc=(" << std::setw(3) << (uint32)domain.x << "," << std::setw(3) << (uint32)domain.y << ")"
-                        << ", t=" << (uint32)domain.transform
-                        << ", scale=" << std::setw(8) << std::setprecision(3) << domain.GetScale()
-                        << ", offset=" << std::setw(8) << std::setprecision(3) << domain.GetOffset() << ", "
-                        << "MSE=" << std::setw(8) << std::setprecision(3) << mse << " ("
-                        << std::setw(8) << std::setprecision(3) << psnr << " dB)" << std::endl;
-                        */
-
                 }
             }
         }
@@ -432,7 +429,7 @@ void Compressor::DecompressRange(const RangeDecompressContext& context) const
     }
     else // !subdivide
     {
-        const uint32 domainScaling = mSizeBits - DOMAIN_LOCATION_BITS;
+        const uint32 domainScaling = mSizeBits > DOMAIN_LOCATION_BITS ? mSizeBits - DOMAIN_LOCATION_BITS : 0;
         const Domain& domain = mDomains[context.domainIndex++];
 
         for (uint32 y = 0; y < context.rangeSize; y++)
@@ -446,8 +443,8 @@ void Compressor::DecompressRange(const RangeDecompressContext& context) const
                 TransformLocation(context.rangeSize, x, y, domain.transform, tx, ty);
 
                 // decode domain location (to picture space)
-                const uint32 dx = (domain.x + tx) << domainScaling;
-                const uint32 dy = (domain.y + ty) << domainScaling;
+                const uint32 dx = (domain.x << domainScaling) + 2 * tx;
+                const uint32 dy = (domain.y << domainScaling) + 2 * ty;
 
                 // sample domain (with downsampling)
                 const uint32 domainPixelColor = context.srcImage.SampleDomain(dx, dy);
@@ -566,15 +563,22 @@ bool Compressor::Load(const std::string& name)
 
     // calculate number of elements from number of bits (round up)
     const uint32 quadtreeCodeElements = (header.quadtreeDataSize + 8 * sizeof(QuadtreeCode::ElementType) - 1) / (8 * sizeof(QuadtreeCode::ElementType));
-    std::vector<QuadtreeCode::ElementType> code;
-    code.resize(quadtreeCodeElements);
-    if (fread(code.data(), quadtreeCodeElements * sizeof(QuadtreeCode::ElementType), 1, file) != 1)
+    if (quadtreeCodeElements > 0)
     {
-        std::cout << "Failed to read quadtree data: " << stderr << std::endl;
-        fclose(file);
-        return false;
+        std::vector<QuadtreeCode::ElementType> code;
+        code.resize(quadtreeCodeElements);
+        if (fread(code.data(), quadtreeCodeElements * sizeof(QuadtreeCode::ElementType), 1, file) != 1)
+        {
+            std::cout << "Failed to read quadtree data: " << stderr << std::endl;
+            fclose(file);
+            return false;
+        }
+        mQuadtreeCode.Load(code, header.quadtreeDataSize);
     }
-    mQuadtreeCode.Load(code, header.quadtreeDataSize);
+    else
+    {
+        mQuadtreeCode.Clear();
+    }
 
     // read domains
     mDomains.resize(header.numDomains);
@@ -613,13 +617,14 @@ bool Compressor::Save(const std::string& name) const
         return false;
     }
 
-    std::cout << sizeof(Header) << "\n" << mQuadtreeCode.GetNumElements() * sizeof(QuadtreeCode::ElementType) << "\n" << mDomains.size() * sizeof(Domain) << std::endl;
-
-    if (fwrite(mQuadtreeCode.GetCode().data(), mQuadtreeCode.GetNumElements() * sizeof(QuadtreeCode::ElementType), 1, file) != 1)
+    if (mQuadtreeCode.GetNumElements() > 0)
     {
-        std::cout << "Failed to write quadtree data: " << stderr << std::endl;
-        fclose(file);
-        return false;
+        if (fwrite(mQuadtreeCode.GetCode().data(), mQuadtreeCode.GetNumElements() * sizeof(QuadtreeCode::ElementType), 1, file) != 1)
+        {
+            std::cout << "Failed to write quadtree data: " << stderr << std::endl;
+            fclose(file);
+            return false;
+        }
     }
 
     if (fwrite(mDomains.data(), mDomains.size() * sizeof(Domain), 1, file) != 1)
