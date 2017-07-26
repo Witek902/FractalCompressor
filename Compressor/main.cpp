@@ -15,7 +15,7 @@
 int main()
 {
     Image originalImage;
-    if (!originalImage.Load("../Original/lena_256.bmp"))
+    if (!originalImage.Load("../Original/lena_512.bmp"))
     {
         std::cout << "Failed to load source image" << std::endl;
         return 1;
@@ -49,6 +49,7 @@ int main()
         return 1;
     }
     compressorY.Save("../Encoded/encodedY.dat");
+    compressorY.SaveAsSourceFile("luma", "../Demo/luma.cpp");
 
     std::cout << "Compressing Cb channel..." << std::endl;
     if (!compressorCb.Compress(cbImage))
@@ -57,6 +58,7 @@ int main()
         return 1;
     }
     compressorCb.Save("../Encoded/encodedCb.dat");
+    compressorCb.SaveAsSourceFile("cb", "../Demo/cb.cpp");
 
     std::cout << "Compressing Cr channel..." << std::endl;
     if (!compressorCr.Compress(crImage))
@@ -65,6 +67,7 @@ int main()
         return 1;
     }
     compressorCr.Save("../Encoded/encodedCr.dat");
+    compressorCr.SaveAsSourceFile("cr", "../Demo/cr.cpp");
 #endif // DECOMPRESS_EXISTING
 
     
@@ -76,6 +79,7 @@ int main()
         std::cout << "Failed to decompress Y image" << std::endl;
         return 1;
     }
+    decompressedY.Save("../Encoded/fractal_decompressed_y.bmp");
 
     std::cout << "Decompressing Cb..." << std::endl;
     Image decompressedCb;
@@ -84,6 +88,7 @@ int main()
         std::cout << "Failed to decompress Cb image" << std::endl;
         return 1;
     }
+    decompressedCb.Save("../Encoded/fractal_decompressed_cb.bmp");
 
     std::cout << "Decompressing Cr..." << std::endl;
     Image decompressedCr;
@@ -92,6 +97,7 @@ int main()
         std::cout << "Failed to decompress Cr image" << std::endl;
         return 1;
     }
+    decompressedCr.Save("../Encoded/fractal_decompressed_cr.bmp");
 
     std::cout << "Upsampling chroma components..." << std::endl;
     decompressedCb = decompressedCb.Upsample().Upsample();
@@ -103,9 +109,7 @@ int main()
     {
         return 3;
     }
-
-    std::string fileName = "../Encoded/fractal_decompressed.bmp";
-    decompressed.Save(fileName);
+    decompressed.Save("../Encoded/fractal_decompressed.bmp");
 
     /*
     std::cout << std::endl << "=== COMPRESSED IMAGE STATS ===" << std::endl;

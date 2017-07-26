@@ -74,6 +74,9 @@ public:
     // save compressed image to a file
     bool Save(const std::string& name) const;
 
+    // save compressed image as C file
+    bool SaveAsSourceFile(const std::string& prefix, const std::string& name) const;
+
     // compress an image
     bool Compress(const Image& image);
 

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <iomanip>
 #include <thread>
+#include <fstream>
 
 
 //#define DISABLE_QUADTREE_SUBDIVISION
@@ -20,8 +21,8 @@ struct Header
     uint32 imageSize;
     uint32 quadtreeDataSize;    // in bits
     uint32 numDomains;
-    uint32 minRangeSize;
-    uint32 maxRangeSize;
+    uint8 minRangeSize;
+    uint8 maxRangeSize;
 };
 
 //////////////////////////////////////////////////////////////////////////
@@ -61,8 +62,8 @@ FORCE_INLINE void TransformLocation(uint32 rangeSize, uint32 x, uint32 y, uint8 
 //////////////////////////////////////////////////////////////////////////
 
 Compressor::Compressor()
-    : mMaxRangeSize(16)
-    , mMinRangeSize(4)
+    : mMaxRangeSize(64)
+    , mMinRangeSize(8)
 {
 }
 
@@ -185,13 +186,21 @@ float Compressor::DomainSearch(const RangeContext& rangeContext, uint8 rangeSize
 uint32 Compressor::CompressRootRange(const RangeContext& rangeContext,
                                    QuadtreeCode& outQuadtreeCode, std::vector<Domain>& outDomains) const
 {
-    const float initialThreshold = 80.0f;           // MSE threshold for the first subdivision level
+    // HACK (importance sampling)
+    float distX = ((float)rangeContext.rx0 + mMinRangeSize / 2) / (float)mSize - 152.0f / 255.0f;
+    float distY = ((float)rangeContext.ry0 + mMinRangeSize / 2) / (float)mSize - 100.0f / 255.0f;
+    float dist = distX * distX + distY * distY;
+
+    // MSE threshold for the first subdivision level
+    const float initialThreshold = 30.0f + dist * 500.0f;
     const float adaptiveThresholdFactor = 1.0f;    // threshold multiplier for consecutive levels
+
+    const uint8 minLocalRangeSize = dist > 0.02f ? 16 : 8;
 
     uint32 numDomainsInTree = 0;
 
-    std::function<void(uint32, uint32, uint32, float)> compressSubRange;
-    compressSubRange = [&](uint32 rx0, uint32 ry0, uint32 rangeSize, float mseThreshold)
+    std::function<void(uint32, uint32, uint8, float)> compressSubRange;
+    compressSubRange = [&](uint32 rx0, uint32 ry0, uint8 rangeSize, float mseThreshold)
     {
         RangeContext subRangeContext(rangeContext);
         subRangeContext.rx0 = rx0;
@@ -205,7 +214,7 @@ uint32 Compressor::CompressRootRange(const RangeContext& rangeContext,
 #ifndef DISABLE_QUADTREE_SUBDIVISION
         if (rangeSize > mMinRangeSize)
         {
-            subdivide = mse > mseThreshold;
+            subdivide = (mse > mseThreshold) && (rangeSize > minLocalRangeSize);
             outQuadtreeCode.Push(subdivide); // don't waste quadtree space if this is the lowest possible level
         }
 #endif // DISABLE_QUADTREE_SUBDIVISION    
@@ -213,7 +222,7 @@ uint32 Compressor::CompressRootRange(const RangeContext& rangeContext,
         // recursively subdivide range
         if (subdivide)
         {
-            const uint32 subRangeSize = rangeSize / 2;
+            const uint8 subRangeSize = rangeSize / 2;
             const float subRangeThreshold = mseThreshold * adaptiveThresholdFactor;
 
             compressSubRange(rx0,                   ry0,                subRangeSize, subRangeThreshold);
@@ -346,10 +355,10 @@ bool Compressor::Compress(const Image& image)
         std::cout << std::endl;
     }
 
-    const uint32 domainsDataSize = mDomains.size() * sizeof(Domain);
-    const uint32 quadtreeElements =  mQuadtreeCode.GetNumElements();
-    const uint32 totalSize = domainsDataSize + sizeof(QuadtreeCode::ElementType) * quadtreeElements;
-    const float bitsPerPixel = (float)totalSize / (float)(image.GetSize() * image.GetSize());
+    const size_t domainsDataSize = mDomains.size() * sizeof(Domain);
+    const size_t quadtreeElements = mQuadtreeCode.GetNumElements();
+    const size_t totalSize = domainsDataSize + sizeof(QuadtreeCode::ElementType) * quadtreeElements;
+    const float bitsPerPixel = (float)(totalSize * 8) / (float)(image.GetSize() * image.GetSize());
     std::cout << "Num domains:     " << mDomains.size() << std::endl;
     std::cout << "Quadtree size:   " << mQuadtreeCode.GetSize() << std::endl;
     std::cout << "Compressed size: " << totalSize << " bytes (" << std::setw(8) << std::setprecision(4) << bitsPerPixel << " bpp)" << std::endl;
@@ -462,7 +471,7 @@ bool Compressor::Decompress(Image& outImage) const
         return false;
     }
 
-    const uint32 MAX_ITERATIONS = 50;
+    const uint32 MAX_ITERATIONS = 100;
 
     uint32 currentImage = 0;
     Image tempImages[2];
@@ -631,5 +640,38 @@ bool Compressor::Save(const std::string& name) const
     }
 
     fclose(file);
+    return true;
+}
+
+bool Compressor::SaveAsSourceFile(const std::string& prefix, const std::string& name) const
+{
+    std::ofstream file(name);
+    if (!file.good())
+    {
+        std::cout << "Failed to open target encoded file '" << name << "': " << stderr << std::endl;
+        return false;
+    }
+
+    file << "#include \"demo.h\"\n\n";
+
+    if (mQuadtreeCode.GetNumElements() > 0)
+    {
+        file << "const unsigned int " << prefix << "QuadtreeData[] = \n{\n";
+        for (uint32 i = 0; i < mQuadtreeCode.GetNumElements(); ++i)
+        {
+            file << "    0x" << std::hex << mQuadtreeCode.GetCode().data()[i] << ",\n";
+        }
+        file << "};\n\n";
+    }
+
+    {
+        file << "const Domain " << prefix << "DomainsData[] = \n{\n";
+        for (const Domain& d : mDomains)
+        {
+            file << std::dec << "    { " << d.x << ", " << d.y << ", " << d.transform << ", " << d.offset << ", " << d.scale << " },\n";
+        }
+        file << "};\n\n";
+    }
+
     return true;
 }
