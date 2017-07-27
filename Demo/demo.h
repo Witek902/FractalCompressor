@@ -4,10 +4,12 @@
 #define WIN32_EXTRA_LEAN
 #include <windows.h>
 
+#include "../Compressor/settings.h"
+
 //////////////////////////////////////////////////////////////////////////
 
-#define FORCE_INLINE
-//#define FORCE_INLINE __forceinline
+//#define FORCE_INLINE
+#define FORCE_INLINE __forceinline
 
 //////////////////////////////////////////////////////////////////////////
 
@@ -18,27 +20,17 @@
 #define CHROMA_IMAGE_SIZE           (IMAGE_SIZE >> CHROMA_SUBSAMPLING)
 
 // TODO
-#define MIN_RANGE_SIZE              4
-#define MAX_RANGE_SIZE              32
-
-#define DOMAIN_LOCATION_BITS        7
-#define DOMAIN_MAX_TRANSFORMS       (1 << (DOMAIN_LOCATION_BITS - 1))
-#define DOMAIN_TRANSFORM_BITS       3
-#define DOMAIN_SCALE_BITS           7
-#define DOMAIN_SCALE_RANGE_BITS     1
-#define DOMAIN_SCALE_RANGE (1 << (DOMAIN_SCALE_RANGE_BITS - 1))
-#define DOMAIN_OFFSET_BITS          7
-#define DOMAIN_OFFSET_RANGE_BITS    9
-#define DOMAIN_OFFSET_RANGE (1 << (DOMAIN_OFFSET_RANGE_BITS - 1))
+#define MIN_RANGE_SIZE              8
+#define MAX_RANGE_SIZE              64
 
 //////////////////////////////////////////////////////////////////////////
 
 #define CLIP(X) ( (X) > 255 ? 255 : (X) < 0 ? 0 : X)
 
 // YCbCr -> RGB
-#define CONVERT_YCbCr2R(Y, Cb, Cr) CLIP(Y + (91881 * Cr >> 16) - 179)
-#define CONVERT_YCbCr2G(Y, Cb, Cr) CLIP(Y - ((22544 * Cb + 46793 * Cr) >> 16) + 135)
-#define CONVERT_YCbCr2B(Y, Cb, Cr) CLIP(Y + (116129 * Cb >> 16) - 226)
+#define CONVERT_YCbCr2R(Y, Cb, Cr) CLIP(Y + ((3 * (Cr - 128) - (Cb - 128)) >> 1))
+#define CONVERT_YCbCr2G(Y, Cb, Cr) CLIP(Y - ((1 * (Cr - 128) + (Cb - 128)) >> 1))
+#define CONVERT_YCbCr2B(Y, Cb, Cr) CLIP(Y + ((3 * (Cb - 128) - (Cr - 128)) >> 1))
 
 //////////////////////////////////////////////////////////////////////////
 
@@ -63,7 +55,7 @@ FORCE_INLINE T Max(const T a, const T b)
     return a > b ? a : b;
 }
 
-class QuadtreeCode;
+class Stream;
 class Image;
 
 struct Domain
@@ -81,13 +73,13 @@ struct RangeDecompressContext
     uint32 rangeSize;
     uint32 domainScaling;
     uint32& domainIndex;
-    QuadtreeCode& quadtreeCode;
+    Stream& quadtreeCode;
     const Domain* domains;
     const Image& srcImage;
     Image& destImage;
 
 
-    RangeDecompressContext(const Image& srcImage, Image& destImage, uint32& domainIndex, QuadtreeCode& quadtreeCode)
+    RangeDecompressContext(const Image& srcImage, Image& destImage, uint32& domainIndex, Stream& quadtreeCode)
         : srcImage(srcImage), destImage(destImage), domainIndex(domainIndex), quadtreeCode(quadtreeCode)
     { }
 

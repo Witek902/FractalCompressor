@@ -33,15 +33,21 @@ int main()
     cbImage = cbImage.Downsample().Downsample();
     crImage = crImage.Downsample().Downsample();
 
-    Compressor compressorY, compressorCb, compressorCr;
+    CompressorSettings lumaSettings;
+    lumaSettings.minRangeSize = 8;
+    lumaSettings.maxRangeSize = 64;
+
+    // HACKS
+    CompressorSettings chromaSettings = lumaSettings;
+    chromaSettings.disableImportance = true;
+    chromaSettings.mseMultiplier = 2.70f;
+
+    Compressor compressorY(lumaSettings);
+    Compressor compressorCb(chromaSettings);
+
+    chromaSettings.mseMultiplier = 1.50f;
+    Compressor compressorCr(chromaSettings);
     
-#ifdef DECOMPRESS_EXISTING
-    if (!compressor.Load("../Encoded/encoded.dat"))
-    {
-        std::cout << "Failed to load compressed image" << std::endl;
-        return 1;
-    }
-#else
     std::cout << "Compressing Y channel..." << std::endl;
     if (!compressorY.Compress(yImage))
     {
@@ -60,6 +66,7 @@ int main()
     compressorCb.Save("../Encoded/encodedCb.dat");
     compressorCb.SaveAsSourceFile("cb", "../Demo/cb.cpp");
 
+
     std::cout << "Compressing Cr channel..." << std::endl;
     if (!compressorCr.Compress(crImage))
     {
@@ -68,7 +75,6 @@ int main()
     }
     compressorCr.Save("../Encoded/encodedCr.dat");
     compressorCr.SaveAsSourceFile("cr", "../Demo/cr.cpp");
-#endif // DECOMPRESS_EXISTING
 
     
 #ifdef COMPARE_WITH_ORIGINAL

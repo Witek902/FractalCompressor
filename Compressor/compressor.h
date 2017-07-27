@@ -63,10 +63,25 @@ struct RangeDecompressContext
     RangeDecompressContext(const RangeDecompressContext&) = default;
 };
 
+struct CompressorSettings
+{
+    float mseMultiplier;
+    uint8 minRangeSize;
+    uint8 maxRangeSize;
+    bool disableImportance;
+
+    CompressorSettings()
+        : mseMultiplier(1.0f)
+        , minRangeSize(4)
+        , maxRangeSize(32)
+        , disableImportance(false)
+    { }
+};
+
 class Compressor
 {
 public:
-    Compressor();
+    Compressor(const CompressorSettings& settings = CompressorSettings());
 
     // load compressed image from a file
     bool Load(const std::string& name);
@@ -111,8 +126,7 @@ private:
     uint32 mSizeMask;
 
     // Compression info
-    uint8 mMaxRangeSize;
-    uint8 mMinRangeSize;
+    CompressorSettings mSettings;
 
     using Domains = std::vector<Domain>;
 

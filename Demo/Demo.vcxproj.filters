@@ -20,17 +20,14 @@
     <ClInclude Include="demo.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="quadtree.h">
+    <ClInclude Include="image.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="image.h">
+    <ClInclude Include="stream.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="demo.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="cb.cpp">
       <Filter>ImageData</Filter>
     </ClCompile>
@@ -39,6 +36,9 @@
     </ClCompile>
     <ClCompile Include="luma.cpp">
       <Filter>ImageData</Filter>
+    </ClCompile>
+    <ClCompile Include="demo_fractal.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

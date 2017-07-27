@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "demo.h"
 #include "image.h"
-#include "quadtree.h"
+#include "stream.h"
 
 unsigned char tempBuffer[IMAGE_SIZE * IMAGE_SIZE] = { 0 };
 
@@ -16,18 +16,6 @@ unsigned char crBuffer[IMAGE_SIZE * IMAGE_SIZE] = { 0 }; // downsampled
 unsigned int finalImage[IMAGE_SIZE * IMAGE_SIZE] = { 0 };
 
 //////////////////////////////////////////////////////////////////////////
-
-FORCE_INLINE void Upsample(uint8* target, const uint8* source, uint32 sourceSize)
-{
-    for (uint32 y = 0; y < sourceSize * 2; ++y)
-    {
-        for (uint32 x = 0; x < sourceSize * 2; ++x)
-        {
-            const uint8 color = source[sourceSize * (y / 2) + (x / 2)];
-            target[2 * sourceSize * y + x] = color;
-        }
-    }
-}
 
 FORCE_INLINE void TransformLocation(uint32 rangeSize, uint32 x, uint32 y, uint32 transform, uint32& outX, uint32& outY)
 {
@@ -68,7 +56,7 @@ void DecompressRange(const RangeDecompressContext& context)
     bool subdivide = false;
     if (context.rangeSize > MIN_RANGE_SIZE)
     {
-        subdivide = context.quadtreeCode.Get();
+        subdivide = context.quadtreeCode.GetBit();
     }
 
     if (subdivide)
@@ -117,9 +105,9 @@ void Decompress(uint32 size, uint32 domainScaling, const Domain domains[], const
     uint32 currentImage = 0;
     Image tempImages[2] = { { outputBuffer, size, size - 1 }, { tempBuffer, size, size - 1 } };
 
-    QuadtreeCode tmpQuadtreeCode(quadTreeCode);
+    Stream tmpQuadtreeCode(quadTreeCode);
 
-    for (uint32 i = 0; i < 32; ++i)
+    for (uint32 i = 0; i < 128; ++i)
     {
         // swap images
         const Image& src = tempImages[currentImage];
@@ -157,11 +145,20 @@ FORCE_INLINE static void Decompress()
     Decompress(CHROMA_IMAGE_SIZE, chromaDomainScaling, cbDomainsData, cbQuadtreeData, cbBuffer);
     Decompress(CHROMA_IMAGE_SIZE, chromaDomainScaling, crDomainsData, crQuadtreeData, crBuffer);
 
-    Upsample(tempBuffer, cbBuffer, CHROMA_IMAGE_SIZE);
-    Upsample(cbBufferUpsampled, tempBuffer, CHROMA_IMAGE_SIZE * 2);
-
-    Upsample(tempBuffer, crBuffer, CHROMA_IMAGE_SIZE);
-    Upsample(crBufferUpsampled, tempBuffer, CHROMA_IMAGE_SIZE * 2);
+    // upsample chroma
+    {
+        const uint32 chromaSubsampling = 4;
+        for (uint32 y = 0; y < CHROMA_IMAGE_SIZE * chromaSubsampling; ++y)
+        {
+            for (uint32 x = 0; x < CHROMA_IMAGE_SIZE * chromaSubsampling; ++x)
+            {
+                const uint32 srcLoc = CHROMA_IMAGE_SIZE * (y / chromaSubsampling) + (x / chromaSubsampling);
+                const uint32 targetLoc = chromaSubsampling * CHROMA_IMAGE_SIZE * y + x;
+                cbBufferUpsampled[targetLoc] = cbBuffer[srcLoc];
+                crBufferUpsampled[targetLoc] = crBuffer[srcLoc];
+            }
+        }
+    }
 
     for (uint32 i = 0; i < IMAGE_SIZE * IMAGE_SIZE; ++i)
     {
@@ -185,11 +182,14 @@ void entrypoint(void)
 {
     Decompress();
 
-    HDC hDC = GetDC(CreateWindowExA(WS_EX_TOPMOST, "static", 0, WS_VISIBLE | WS_POPUP | WS_CLIPSIBLINGS | WS_CLIPCHILDREN, 0, 0, IMAGE_SIZE, IMAGE_SIZE, 0, 0, 0, 0));
-    do
-    {
+    RECT rect;
+    GetClientRect(GetDesktopWindow(), &rect);
 
-        StretchDIBits(hDC, 0, 0, IMAGE_SIZE, IMAGE_SIZE, 0, 0, IMAGE_SIZE, IMAGE_SIZE, finalImage, &bmi, DIB_RGB_COLORS, SRCCOPY);
+    HDC hDC = GetDC(CreateWindowExA(WS_EX_TOPMOST, "static", 0, WS_VISIBLE | WS_POPUP | WS_CLIPSIBLINGS | WS_CLIPCHILDREN, 0, 0, rect.right, rect.bottom, 0, 0, 0, 0));
 
-    } while (!GetAsyncKeyState(VK_ESCAPE));
+    SetStretchBltMode(hDC, STRETCH_HALFTONE);
+    //StretchDIBits(hDC, 0, 0, rect.right, rect.bottom, 0, 0, 1, 1, finalImage, &bmi, DIB_RGB_COLORS, SRCCOPY);
+    StretchDIBits(hDC, (rect.right - rect.bottom) / 2, 0, rect.bottom, rect.bottom, 0, 0, IMAGE_SIZE, IMAGE_SIZE, finalImage, &bmi, DIB_RGB_COLORS, SRCCOPY);
+
+    do { } while (!GetAsyncKeyState(VK_ESCAPE));
 }

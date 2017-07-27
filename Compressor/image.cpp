@@ -20,14 +20,14 @@ struct BitmapFileHeader
 #define CLIP(X) ( (X) > 255 ? 255 : (X) < 0 ? 0 : X)
 
 // RGB -> YCbCr
-#define CONVERT_RGB2Y(R, G, B)  CLIP((19595 * R + 38470 * G + 7471 * B) >> 16)
-#define CONVERT_RGB2Cb(R, G, B) CLIP((36962 * (B - CLIP((19595 * R + 38470 * G + 7471 * B) >> 16)) >> 16) + 128)
-#define CONVERT_RGB2Cr(R, G, B) CLIP((46727 * (R - CLIP((19595 * R + 38470 * G + 7471 * B) >> 16)) >> 16) + 128)
+#define CONVERT_RGB2Y(R, G, B)  CLIP((1 * R + 2 * G + 1 * B) >> 2)
+#define CONVERT_RGB2Cb(R, G, B) CLIP(((B - G) >> 1) + 128)
+#define CONVERT_RGB2Cr(R, G, B) CLIP(((R - G) >> 1) + 128)
 
 // YCbCr -> RGB
-#define CONVERT_YCbCr2R(Y, Cb, Cr) CLIP(Y + (91881 * Cr >> 16) - 179)
-#define CONVERT_YCbCr2G(Y, Cb, Cr) CLIP(Y - ((22544 * Cb + 46793 * Cr) >> 16) + 135)
-#define CONVERT_YCbCr2B(Y, Cb, Cr) CLIP(Y + (116129 * Cb >> 16) - 226)
+#define CONVERT_YCbCr2R(Y, Cb, Cr) CLIP(Y + ((3 * (Cr - 128) - (Cb - 128)) >> 1))
+#define CONVERT_YCbCr2G(Y, Cb, Cr) CLIP(Y - ((1 * (Cr - 128) + (Cb - 128)) >> 1))
+#define CONVERT_YCbCr2B(Y, Cb, Cr) CLIP(Y + ((3 * (Cb - 128) - (Cr - 128)) >> 1))
 
 //////////////////////////////////////////////////////////////////////////
 

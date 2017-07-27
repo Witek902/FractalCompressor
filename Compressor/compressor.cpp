@@ -21,8 +21,7 @@ struct Header
     uint32 imageSize;
     uint32 quadtreeDataSize;    // in bits
     uint32 numDomains;
-    uint8 minRangeSize;
-    uint8 maxRangeSize;
+    CompressorSettings settings;
 };
 
 //////////////////////////////////////////////////////////////////////////
@@ -61,11 +60,9 @@ FORCE_INLINE void TransformLocation(uint32 rangeSize, uint32 x, uint32 y, uint8 
 
 //////////////////////////////////////////////////////////////////////////
 
-Compressor::Compressor()
-    : mMaxRangeSize(64)
-    , mMinRangeSize(8)
-{
-}
+Compressor::Compressor(const CompressorSettings& settings)
+    : mSettings(settings)
+{}
 
 //////////////////////////////////////////////////////////////////////////
 // Compression
@@ -184,18 +181,19 @@ float Compressor::DomainSearch(const RangeContext& rangeContext, uint8 rangeSize
 }
 
 uint32 Compressor::CompressRootRange(const RangeContext& rangeContext,
-                                   QuadtreeCode& outQuadtreeCode, std::vector<Domain>& outDomains) const
+                                     QuadtreeCode& outQuadtreeCode, std::vector<Domain>& outDomains) const
 {
     // HACK (importance sampling)
-    float distX = ((float)rangeContext.rx0 + mMinRangeSize / 2) / (float)mSize - 152.0f / 255.0f;
-    float distY = ((float)rangeContext.ry0 + mMinRangeSize / 2) / (float)mSize - 100.0f / 255.0f;
-    float dist = distX * distX + distY * distY;
+    float distX = ((float)rangeContext.rx0 + mSettings.maxRangeSize / 2) / (float)mSize - 152.0f / 255.0f;
+    float distY = ((float)rangeContext.ry0 + mSettings.maxRangeSize / 2) / (float)mSize - 110.0f / 255.0f;
+    float dist = mSettings.disableImportance ? 0.0f : distX * distX + distY * distY;
 
     // MSE threshold for the first subdivision level
-    const float initialThreshold = 30.0f + dist * 500.0f;
+    const float initialThreshold = mSettings.mseMultiplier * (30.0f + dist * 520.0f);
     const float adaptiveThresholdFactor = 1.0f;    // threshold multiplier for consecutive levels
 
-    const uint8 minLocalRangeSize = dist > 0.02f ? 16 : 8;
+    // TODO
+    const uint8 minLocalRangeSize = !mSettings.disableImportance && dist > 0.020f ? (mSettings.minRangeSize * 2) : mSettings.minRangeSize;
 
     uint32 numDomainsInTree = 0;
 
@@ -212,7 +210,7 @@ uint32 Compressor::CompressRootRange(const RangeContext& rangeContext,
         bool subdivide = false;
 
 #ifndef DISABLE_QUADTREE_SUBDIVISION
-        if (rangeSize > mMinRangeSize)
+        if (rangeSize > mSettings.minRangeSize)
         {
             subdivide = (mse > mseThreshold) && (rangeSize > minLocalRangeSize);
             outQuadtreeCode.Push(subdivide); // don't waste quadtree space if this is the lowest possible level
@@ -248,13 +246,15 @@ uint32 Compressor::CompressRootRange(const RangeContext& rangeContext,
         }
     };
 
-    compressSubRange(rangeContext.rx0, rangeContext.ry0, mMaxRangeSize, initialThreshold);
+    compressSubRange(rangeContext.rx0, rangeContext.ry0, mSettings.maxRangeSize, initialThreshold);
     return numDomainsInTree;
 }
 
 bool Compressor::Compress(const Image& image)
 {
-    if (image.GetSize() < mMaxRangeSize)
+    const uint32 maxRangeSize = mSettings.maxRangeSize;
+
+    if (image.GetSize() < maxRangeSize)
     {
         std::cout << "Image is too small" << std::endl;
         return false;
@@ -264,7 +264,7 @@ bool Compressor::Compress(const Image& image)
     mSizeBits = image.GetSizeBits();
     mSizeMask = image.GetSizeMask();
 
-    const uint32 numRangesInColumn = image.GetSize() / mMaxRangeSize;
+    const uint32 numRangesInColumn = image.GetSize() / maxRangeSize;
     const uint32 numThreads = std::min<uint32>(numRangesInColumn, std::thread::hardware_concurrency());
     const uint32 rowsPerThread = numRangesInColumn / numThreads;
     const uint32 totalRangeBlocks = numRangesInColumn * numRangesInColumn;
@@ -282,7 +282,7 @@ bool Compressor::Compress(const Image& image)
         std::vector<Domain>& domains = domainsPerThread[threadID];
         QuadtreeCode& quadtreeCode = quadtreesPerThread[threadID];
 
-        const uint32 numRangePixels = mMaxRangeSize * mMaxRangeSize;
+        const uint32 numRangePixels = maxRangeSize * maxRangeSize;
 
         std::vector<uint8> domainDataCache;
         std::vector<uint8> rangeDataCache;
@@ -294,9 +294,9 @@ bool Compressor::Compress(const Image& image)
         for (uint32 i = 0; i < rowsPerThread; ++i) // iterate local rows
         {
             // range block Y coordinate
-            rangeContext.ry0 = mMaxRangeSize * (rowsPerThread * threadID + i);
+            rangeContext.ry0 = maxRangeSize * (rowsPerThread * threadID + i);
 
-            for (uint32 rx0 = 0; rx0 < image.GetSize(); rx0 += mMaxRangeSize) // range block X coordinate
+            for (uint32 rx0 = 0; rx0 < image.GetSize(); rx0 += maxRangeSize) // range block X coordinate
             {
                 rangeContext.rx0 = rx0;
                 const uint32 numDomainsInTree = CompressRootRange(rangeContext, quadtreeCode, domains);
@@ -409,13 +409,13 @@ DomainsStats Compressor::CalculateDomainStats() const
 
 void Compressor::DecompressRange(const RangeDecompressContext& context) const
 {
-    assert(context.rangeSize >= mMinRangeSize);
+    assert(context.rangeSize >= mSettings.minRangeSize);
     assert(context.rx0 < mSize);
     assert(context.ry0 < mSize);
 
     // check if this range should be subdivided
     bool subdivide = false;
-    if (context.rangeSize > mMinRangeSize)
+    if (context.rangeSize > mSettings.minRangeSize)
     {
         subdivide = context.quadtreeCode.Get();
     }
@@ -493,11 +493,11 @@ bool Compressor::Decompress(Image& outImage) const
         uint32 domainIndex = 0;
 
         RangeDecompressContext context(src, dest, domainIndex, tmpQuadtreeCode);
-        context.rangeSize = mMaxRangeSize;
+        context.rangeSize = mSettings.maxRangeSize;
 
-        for (uint32 ry0 = 0; ry0 < mSize; ry0 += mMaxRangeSize)
+        for (uint32 ry0 = 0; ry0 < mSize; ry0 += mSettings.maxRangeSize)
         {
-            for (uint32 rx0 = 0; rx0 < mSize; rx0 += mMaxRangeSize)
+            for (uint32 rx0 = 0; rx0 < mSize; rx0 += mSettings.maxRangeSize)
             {
                 context.rx0 = rx0;
                 context.ry0 = ry0;
@@ -556,10 +556,7 @@ bool Compressor::Load(const std::string& name)
     }
     mSizeMask = (1 << mSizeBits) - 1;
 
-    mMaxRangeSize = header.maxRangeSize;
-    mMinRangeSize = header.minRangeSize;
-
-    if (mMinRangeSize <= 2 || mMaxRangeSize < mMinRangeSize)
+    if (mSettings.minRangeSize <= 2 || mSettings.maxRangeSize < mSettings.minRangeSize)
     {
         std::cout << "Corrupted/invalid file" << std::endl;
         fclose(file);
@@ -612,8 +609,7 @@ bool Compressor::Save(const std::string& name) const
     header.imageSize = mSize;
     header.quadtreeDataSize = mQuadtreeCode.GetSize();
     header.numDomains = (uint32)mDomains.size();
-    header.minRangeSize = mMinRangeSize;
-    header.maxRangeSize = mMaxRangeSize;
+    header.settings = mSettings;
 
     if (fwrite(&header, sizeof(Header), 1, file) != 1)
     {
