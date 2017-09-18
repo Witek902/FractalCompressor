@@ -26,6 +26,12 @@
     <ClInclude Include="stream.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="points.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="common.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="cb.cpp">
@@ -38,6 +44,9 @@
       <Filter>ImageData</Filter>
     </ClCompile>
     <ClCompile Include="demo_fractal.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="demo_voronoi.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

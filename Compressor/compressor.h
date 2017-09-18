@@ -38,7 +38,7 @@ struct DomainMatchParams
 
     // domain location
     uint32 dx0, dy0;
-    
+
     uint8 transform;
 
     DomainMatchParams(const RangeContext& rangeContext)
@@ -68,13 +68,11 @@ struct CompressorSettings
     float mseMultiplier;
     uint8 minRangeSize;
     uint8 maxRangeSize;
-    bool disableImportance;
 
     CompressorSettings()
         : mseMultiplier(1.0f)
         , minRangeSize(4)
         , maxRangeSize(32)
-        , disableImportance(false)
     { }
 };
 

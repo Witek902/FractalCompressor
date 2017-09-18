@@ -7,6 +7,21 @@
 
 //////////////////////////////////////////////////////////////////////////
 
+
+#define CLIP(X) ( (X) > 255 ? 255 : (X) < 0 ? 0 : X)
+
+// RGB -> YCbCr
+#define CONVERT_RGB2Y(R, G, B)  CLIP((1 * R + 2 * G + 1 * B) >> 2)
+#define CONVERT_RGB2Cb(R, G, B) CLIP(((B - G) >> 1) + 128)
+#define CONVERT_RGB2Cr(R, G, B) CLIP(((R - G) >> 1) + 128)
+
+// YCbCr -> RGB
+#define CONVERT_YCbCr2R(Y, Cb, Cr) CLIP(Y + ((3 * (Cr - 128) - (Cb - 128)) >> 1))
+#define CONVERT_YCbCr2G(Y, Cb, Cr) CLIP(Y - ((1 * (Cr - 128) + (Cb - 128)) >> 1))
+#define CONVERT_YCbCr2B(Y, Cb, Cr) CLIP(Y + ((3 * (Cb - 128) - (Cr - 128)) >> 1))
+
+//////////////////////////////////////////////////////////////////////////
+
 struct ImageDifference
 {
     float averageError;
@@ -51,7 +66,10 @@ public:
     Image& operator = (Image&&) = default;
 
     // resize and init with zeros
-    bool Resize(uint32 size, uint32 channels);
+    bool Resize(uint32 size, uint32 channels, uint8 fillColor = 0);
+
+    // fill with color
+    void Clear(uint8 fillColor);
 
     // create 2x downsampled image
     Image Downsample() const;
@@ -92,6 +110,16 @@ public:
     uint32 GetChannelsNum() const
     {
         return mChannels;
+    }
+
+    // access image pixel
+    FORCE_INLINE uint8& At(uint32 x, uint32 y)
+    {
+        assert(mChannels == 1);
+        assert(x < mSize);
+        assert(y < mSize);
+
+        return mData[y * mSize + x];
     }
 
     // get single pixel (monochromatic)
@@ -148,6 +176,19 @@ public:
         data[0] = r;
         data[1] = g;
         data[2] = b;
+    }
+
+    // write single pixel (RGB)
+    FORCE_INLINE void WritePixel3(uint32 x, uint32 y, uint32 color)
+    {
+        assert(mChannels == 3);
+        assert(x < mSize);
+        assert(y < mSize);
+
+        uint8* data = mData.data() + 3 * (y * mSize + x);
+        data[0] = (uint8)(color);
+        data[1] = (uint8)(color >> 8);
+        data[2] = (uint8)(color >> 16);
     }
 
     // get and downsampled 2x2 region of pixels

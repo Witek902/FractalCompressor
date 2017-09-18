@@ -60,11 +60,11 @@ class Image;
 
 struct Domain
 {
+    uint16 offset : DOMAIN_OFFSET_BITS;
+    uint16 scale : DOMAIN_SCALE_BITS;
     uint16 x : DOMAIN_LOCATION_BITS;
     uint16 y : DOMAIN_LOCATION_BITS;
     uint16 transform : DOMAIN_TRANSFORM_BITS;
-    uint16 offset : DOMAIN_OFFSET_BITS;
-    uint16 scale : DOMAIN_SCALE_BITS;
 };
 
 struct RangeDecompressContext

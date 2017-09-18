@@ -15,23 +15,10 @@ struct BitmapFileHeader
 };
 #pragma pack(pop)
 
-//////////////////////////////////////////////////////////////////////////
-
-#define CLIP(X) ( (X) > 255 ? 255 : (X) < 0 ? 0 : X)
-
-// RGB -> YCbCr
-#define CONVERT_RGB2Y(R, G, B)  CLIP((1 * R + 2 * G + 1 * B) >> 2)
-#define CONVERT_RGB2Cb(R, G, B) CLIP(((B - G) >> 1) + 128)
-#define CONVERT_RGB2Cr(R, G, B) CLIP(((R - G) >> 1) + 128)
-
-// YCbCr -> RGB
-#define CONVERT_YCbCr2R(Y, Cb, Cr) CLIP(Y + ((3 * (Cr - 128) - (Cb - 128)) >> 1))
-#define CONVERT_YCbCr2G(Y, Cb, Cr) CLIP(Y - ((1 * (Cr - 128) + (Cb - 128)) >> 1))
-#define CONVERT_YCbCr2B(Y, Cb, Cr) CLIP(Y + ((3 * (Cb - 128) - (Cr - 128)) >> 1))
 
 //////////////////////////////////////////////////////////////////////////
 
-bool Image::Resize(uint32 size, uint32 channels)
+bool Image::Resize(uint32 size, uint32 channels, uint8 fillColor)
 {
     if ((size & (size - 1)) != 0)
     {
@@ -55,8 +42,13 @@ bool Image::Resize(uint32 size, uint32 channels)
     mSizeMask = (1 << mSizeBits) - 1;
 
     mData.resize(size * size * channels);
-    memset(mData.data(), 0, mData.size());
+    memset(mData.data(), fillColor, mData.size());
     return true;
+}
+
+void Image::Clear(uint8 fillColor)
+{
+    memset(mData.data(), fillColor, mData.size());
 }
 
 Image Image::Downsample() const
@@ -244,22 +236,51 @@ ImageDifference Image::Compare(const Image& imageA, const Image& imageB)
     assert(imageA.GetSize() == imageB.GetSize());
     assert(imageA.GetChannelsNum() == imageB.GetChannelsNum());
 
-    uint32 totalError = 0;
+    uint32 yTotalError = 0;
+    uint32 cbTotalError = 0;
+    uint32 crTotalError = 0;
+
     uint32 maxError = 0;
+    const int size = imageA.GetSize() * imageA.GetSize();
+    const float invSqrSize = 1.0f / (size * size);
 
-    for (size_t i = 0; i < imageA.GetSize(); ++i)
+    for (int index = 0; index < size; ++index)
     {
-        int32 error = (int32)imageA.mData[i] - (int32)imageB.mData[i];
-        error *= error;
+        const int32 rA = imageA.mData[3 * index];
+        const int32 gA = imageA.mData[3 * index + 1];
+        const int32 bA = imageA.mData[3 * index + 2];
 
-        maxError = std::max<uint32>(maxError, error);
-        totalError += error;
+        const int32 yA  = CONVERT_RGB2Y(rA, gA, bA);
+        const int32 cbA = CONVERT_RGB2Cb(rA, gA, bA);
+        const int32 crA = CONVERT_RGB2Cr(rA, gA, bA);
+
+        const int32 rB = imageB.mData[3 * index];
+        const int32 gB = imageB.mData[3 * index + 1];
+        const int32 bB = imageB.mData[3 * index + 2];
+
+        const int32 yB = CONVERT_RGB2Y(rB, gB, bB);
+        const int32 cbB = CONVERT_RGB2Cb(rB, gB, bB);
+        const int32 crB = CONVERT_RGB2Cr(rB, gB, bB);
+
+        int32 yError = (int32)yA - (int32)yB;
+        int32 cbError = (int32)cbA - (int32)cbB;
+        int32 crError = (int32)crA - (int32)crB;
+
+        yError *= yError;
+        cbError *= cbError;
+        crError *= crError;
+
+        yTotalError += yError;
+        cbTotalError += cbError;
+        crTotalError += crError;
     }
 
+    const float lumaWeight = 0.8f;
+    const float chromaWeight = 0.1f;
+
     ImageDifference result;
-    result.averageError = (float)totalError / (float)(imageA.GetSize());
-    result.maxError = (float)maxError / 255.0f;
-    result.psnr = 10.0f * log10f(255.0f * 255.0f / result.averageError);
+    result.averageError = ((float)yTotalError * lumaWeight + ((float)cbTotalError + (float)crTotalError) * chromaWeight) / (float)size;
+    result.psnr = 10.0f * log10f((float)size / result.averageError);
     return result;
 }
 

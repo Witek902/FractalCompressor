@@ -164,11 +164,11 @@ float Compressor::DomainSearch(const RangeContext& rangeContext, uint8 rangeSize
                 const float currentCost = MatchDomain(matchParams, rangeSize, scale, offset);
                 if (currentCost < bestCost)
                 {
+                    bestDomain.SetScale(scale);
+                    bestDomain.SetOffset(offset);
                     bestDomain.x = x;
                     bestDomain.y = y;
                     bestDomain.transform = t;
-                    bestDomain.SetOffset(offset);
-                    bestDomain.SetScale(scale);
 
                     bestCost = currentCost;
                 }
@@ -183,17 +183,9 @@ float Compressor::DomainSearch(const RangeContext& rangeContext, uint8 rangeSize
 uint32 Compressor::CompressRootRange(const RangeContext& rangeContext,
                                      QuadtreeCode& outQuadtreeCode, std::vector<Domain>& outDomains) const
 {
-    // HACK (importance sampling)
-    float distX = ((float)rangeContext.rx0 + mSettings.maxRangeSize / 2) / (float)mSize - 152.0f / 255.0f;
-    float distY = ((float)rangeContext.ry0 + mSettings.maxRangeSize / 2) / (float)mSize - 110.0f / 255.0f;
-    float dist = mSettings.disableImportance ? 0.0f : distX * distX + distY * distY;
-
     // MSE threshold for the first subdivision level
-    const float initialThreshold = mSettings.mseMultiplier * (30.0f + dist * 520.0f);
+    const float initialThreshold = mSettings.mseMultiplier;
     const float adaptiveThresholdFactor = 1.0f;    // threshold multiplier for consecutive levels
-
-    // TODO
-    const uint8 minLocalRangeSize = !mSettings.disableImportance && dist > 0.020f ? (mSettings.minRangeSize * 2) : mSettings.minRangeSize;
 
     uint32 numDomainsInTree = 0;
 
@@ -212,10 +204,10 @@ uint32 Compressor::CompressRootRange(const RangeContext& rangeContext,
 #ifndef DISABLE_QUADTREE_SUBDIVISION
         if (rangeSize > mSettings.minRangeSize)
         {
-            subdivide = (mse > mseThreshold) && (rangeSize > minLocalRangeSize);
+            subdivide = (mse > mseThreshold) && (rangeSize > mSettings.minRangeSize);
             outQuadtreeCode.Push(subdivide); // don't waste quadtree space if this is the lowest possible level
         }
-#endif // DISABLE_QUADTREE_SUBDIVISION    
+#endif // DISABLE_QUADTREE_SUBDIVISION
 
         // recursively subdivide range
         if (subdivide)
@@ -230,6 +222,7 @@ uint32 Compressor::CompressRootRange(const RangeContext& rangeContext,
         }
         else
         {
+
             /*
             {
                 std::lock_guard<std::mutex> lock(mMutex);
@@ -241,6 +234,7 @@ uint32 Compressor::CompressRootRange(const RangeContext& rangeContext,
                     << "MSE=" << std::setw(8) << std::setprecision(3) << mse << std::endl;
             }
             */
+
             outDomains.push_back(domain);
             numDomainsInTree++;
         }

@@ -20,7 +20,10 @@
     <ClCompile Include="compressor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="dct.cpp">
+    <ClCompile Include="prng_compressor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="wavelet_compressor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
