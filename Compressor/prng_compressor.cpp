@@ -49,6 +49,35 @@ using VoronoiMap = std::vector<uint16>;
 // UTILITIES
 //////////////////////////////////////////////////////////////////////////
 
+void rot(int n, int& x, int& y, int rx, int ry)
+{
+    if (ry == 0)
+    {
+        if (rx == 1)
+        {
+            x = n - 1 - x;
+            y = n - 1 - y;
+        }
+
+        int t = x;
+        x = y;
+        y = t;
+    }
+}
+
+int MapHilbert(int n, int x, int y)
+{
+    int rx, ry, s, d = 0;
+    for (s = n / 2; s > 0; s /= 2)
+    {
+        rx = (x & s) > 0;
+        ry = (y & s) > 0;
+        d += s * s * ((3 * rx) ^ ry);
+        rot(s, x, y, rx, ry);
+    }
+    return d;
+}
+
 uint32 log2(uint32 val)
 {
     if (val <= 1)
@@ -88,7 +117,7 @@ __forceinline uint8 EnodeColor(uint8 x)
 
 //static const uint32 gNumChildrenPerParent = 1;
 static const uint32 gPopulationSize = 8;
-static const uint32 gNumPoints = 1536;
+static const uint32 gNumPoints = 1500;
 
 //////////////////////////////////////////////////////////////////////////
 
@@ -279,9 +308,9 @@ void SortChromosome(Chromosome& chromosome)
 {
     std::sort(chromosome.points.begin(), chromosome.points.end(), [](const Point& a, const Point& b)
     {
-        uint32 pa = InterleaveBits(a.x, a.y);
-        uint32 pb = InterleaveBits(b.x, b.y);
-        return pa < pb;
+        uint32 pa = MapHilbert(256, a.x, a.y);
+        uint32 pb = MapHilbert(256, b.x, b.y);
+        return pa > pb;
     });
 }
 
@@ -421,8 +450,13 @@ void GenerateChild(const Chromosome& parent, Chromosome& child, const Image& ima
 static std::mutex g_minErrorMutex;
 static float g_minError = FLT_MAX;
 
-void ReportBestChromosome(const Chromosome& chromosome, const Image& image)
+void ReportBestChromosome(const Chromosome& chromosome, Image& image)
 {
+    for (const Point& p : chromosome.points)
+    {
+        image.WritePixel3(p.x, p.y, 0, 0, 255);
+    }
+
     image.Save("../Encoded/encoded.bmp");
 
     FILE* binaryFile = fopen("../Encoded/points.dat", "wb");
@@ -502,37 +536,44 @@ bool SavePointsAsSourceFile(const std::string& path, const std::vector<Point>& p
         return false;
     }
 
+    uint8 prevX = 0, prevY = 0;
+
     file << "#pragma once\n\n";
     file << "#define NUM_POINTS " << points.size() << "\n";
     file << "#define IMAGE_WIDTH " << image.GetSize() << "\n";
     file << "#define IMAGE_HEIGHT " << image.GetSize() << "\n\n";
-    file << "static const Point points[] =\n{\n";
 
-    uint8 prevX = 0, prevY = 0;
-
+    file << "static const uint8 pointsX[] =\n{\n";
     for (const Point& p : points)
     {
         // delta encoding
         uint8 diffX = (uint8)p.x - prevX;
-        uint8 diffY = (uint8)p.y - prevY;
         prevX = p.x;
-        prevY = p.y;
+        file << "\t" << (uint32)diffX << ",\n";
+    }
+    file << "};\n\n";
 
+    file << "static const uint8 pointsY[] =\n{\n";
+    for (const Point& p : points)
+    {
+        // delta encoding
+        uint8 diffY = (uint8)p.y - prevY;
+        prevY = p.y;
+        file << "\t" << (uint32)diffY << ",\n";
+    }
+    file << "};\n\n";
+
+
+    file << "static const uint32 pointsColors[] =\n{\n";
+    for (const Point& p : points)
+    {
         uint32 r = (uint32)p.r & COLOR_MASK;
         uint32 g = (uint32)p.g & COLOR_MASK;
         uint32 b = (uint32)p.b & COLOR_MASK;
 
         uint32 color = ((uint32)b << 16) | ((uint32)g << 8) | (uint32)r;
-        file << "\t{ " << "0x" << std::hex << color << std::dec << ", " << (uint32)diffX << ", " << (uint32)diffY << " },\n";
-
-        /*
-        file << "\t{ " <<
-            std::dec << p.x << ", " << p.y <<
-            std::dec << ", " << r << ", " << g << ", " << b << ", " << 0 <<
-            " },\n";
-            */
+        file << "\t0x" << std::hex << color << ",\n";
     }
-
     file << "};\n\n";
 
     return true;
@@ -631,7 +672,7 @@ void ProcessEpoch(Population& population, const Image& originalImage, Image temp
 int main()
 {
     Image originalImage;
-    if (!originalImage.Load("../Original/city_256.bmp"))
+    if (!originalImage.Load("../Original/lena_256.bmp"))
     {
         std::cout << "Failed to load source image" << std::endl;
         return 1;
@@ -660,7 +701,7 @@ int main()
     QueryPerformanceFrequency(&freq);
     QueryPerformanceCounter(&start);
 
-    for (int epoch = 0; ; epoch++)
+    for (int epoch = 0; epoch < 1; epoch++)
     {
         ProcessEpoch(population, originalImage, tempImages);
 
@@ -690,7 +731,7 @@ int main()
             start = stop;
             std::cout << epoch << "\t" << std::setprecision(7) << psnr << std::endl;
 
-            //SavePopulation(population);
+            // SavePopulation(population);
             SavePointsAsSourceFile("../Demo/points.h", population.front().points, originalImage);
         }
     }

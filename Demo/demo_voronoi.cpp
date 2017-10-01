@@ -25,17 +25,16 @@ int entrypoint(void)
 
             for (size_t j = 0; j < NUM_POINTS; ++j)
             {
-                const Point& p = points[j];
-                prevX += p.x;
-                prevY += p.y;
+                prevX += pointsX[j];
+                prevY += pointsY[j];
                 const int32 px = prevX * IMAGE_SCALING;
                 const int32 py = prevY * IMAGE_SCALING;
 
                 const int32 d = (px - x) * (px - x) + (py - y) * (py - y);
                 if (d < minDistance)
                 {
+                    color = pointsColors[j] << 3;
                     minDistance = d;
-                    color = p.c << 3;
                 }
             }
 

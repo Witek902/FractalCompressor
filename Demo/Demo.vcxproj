@@ -122,9 +122,9 @@
       <OmitFramePointers>true</OmitFramePointers>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>false</ExceptionHandling>
-      <StructMemberAlignment>4Bytes</StructMemberAlignment>
+      <StructMemberAlignment>1Byte</StructMemberAlignment>
       <BufferSecurityCheck>false</BufferSecurityCheck>
-      <EnableEnhancedInstructionSet>NoExtensions</EnableEnhancedInstructionSet>
+      <EnableEnhancedInstructionSet>StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
       <FloatingPointExceptions>false</FloatingPointExceptions>
       <AssemblerOutput>AssemblyCode</AssemblerOutput>
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
@@ -143,7 +143,7 @@
       <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib</AdditionalDependencies>
       <RandomizedBaseAddress>false</RandomizedBaseAddress>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
-      <AdditionalOptions>/CRINKLER  /HASHSIZE:50 /HASHTRIES:100 /COMPMODE:FAST /ORDERTRIES:100 /REPORT:report.html /TINYIMPORT /UNSAFEIMPORT /PROGRESSGUI %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/CRINKLER  /HASHSIZE:100 /HASHTRIES:100 /COMPMODE:FAST /ORDERTRIES:100 /REPORT:report.html /TINYIMPORT /UNSAFEIMPORT /PROGRESSGUI %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <PreBuildEvent>
       <Command>
